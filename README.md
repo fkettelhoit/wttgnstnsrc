@@ -25,17 +25,22 @@ width of 2000 px is included in the [facsimiles](facsimiles/) directory.
 
 ## How to run locally
 
-If you want to download all the images yourself, you need to install
-[dezoomify-rs](https://github.com/lovasoa/dezoomify-rs), add it to your
-`$PATH`, install Dart and run `pub get && pub run bin/dezoomify.dart`. At the
-moment, the script is deliberately hardcoded to only download facsimiles kept
-in the Wren Library (as only these facsimiles are released under a CC BY-NC
-license) and to fetch the zoom level with a maximum width of 2000 px.
-
-If you want to download images with a different resolution or to a different
-location, you can pass the maximum width and the download destination as
-command line arguments:
+Install [Rust](https://www.rust-lang.org/tools/install), then:
 
 ```
-pub run bin/dezoomify.dart 5000 path/to/my/directory
+cargo run --release
+```
+
+By default, the tool only downloads facsimiles kept in the Wren Library, as
+only these are released under a CC BY-NC license. To download all facsimiles
+from the collection (regardless of license), pass `--all`:
+
+```
+cargo run --release -- --all
+```
+
+You can also customize the image resolution and destination directory:
+
+```
+cargo run --release -- --max-width 5000 --destination path/to/my/directory
 ```

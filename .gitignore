@@ -1,4 +1,7 @@
-# Files and directories created by pub
+# Rust build artifacts
+/target/
+
+# Files and directories created by pub (legacy Dart)
 .dart_tool/
 .packages
 pubspec.lock
