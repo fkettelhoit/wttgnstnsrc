@@ -4,6 +4,7 @@ mod scraper;
 use std::path::PathBuf;
 
 use clap::Parser;
+use futures::stream::{self, StreamExt};
 
 #[derive(Parser)]
 #[command(about = "Download Wittgenstein Nachlass facsimiles from wittgensteinsource.org")]
@@ -19,6 +20,14 @@ struct Args {
     /// Download all facsimiles, not just CC-licensed ones from the Wren Library
     #[arg(long)]
     all: bool,
+
+    /// Skip these documents (comma-separated names, e.g. Ms-107,Ms-108)
+    #[arg(long, value_delimiter = ',')]
+    skip: Vec<String>,
+
+    /// Only download these documents (comma-separated names, e.g. Ms-107,Ms-108)
+    #[arg(long, value_delimiter = ',')]
+    only: Vec<String>,
 }
 
 #[tokio::main]
@@ -52,39 +61,57 @@ async fn main() -> anyhow::Result<()> {
             }
 
             let doc_name = &pages[0].0;
-            let total_pages = pages.len();
-            let mut all_pages_ok = true;
 
-            for (page_idx, (doc, page)) in pages.iter().enumerate() {
-                let dzi_url = scraper::build_dzi_url(doc, page);
-                let output_path = destination.join(doc).join(format!("{page}.png"));
-
-                println!("[{doc_num}/{total_docs}] {doc}/{page} ({}/{})", page_idx + 1, total_pages);
-
-                let mut page_ok = false;
-                for retry in 1..=20 {
-                    match downloader::download_dzi(&dzi_url, &output_path, max_width).await {
-                        Ok(_) => {
-                            page_ok = true;
-                            break;
-                        }
-                        Err(e) => {
-                            eprintln!("  Retry {retry}/20 failed for {doc}/{page}: {e}");
-                        }
-                    }
-                }
-
-                if !page_ok {
-                    eprintln!("Failed {doc}/{page} after 20 retries, retrying whole document (attempt {doc_attempt}/3)");
-                    all_pages_ok = false;
-                    break;
-                }
+            if !args.skip.is_empty() && args.skip.iter().any(|s| s == doc_name) {
+                println!("[{doc_num}/{total_docs}] Skipping {doc_name}");
+                doc_ok = true;
+                break;
+            }
+            if !args.only.is_empty() && !args.only.iter().any(|s| s == doc_name) {
+                println!("[{doc_num}/{total_docs}] Skipping {doc_name} (not in --only list)");
+                doc_ok = true;
+                break;
             }
 
+            let total_pages = pages.len();
+
+            let results: Vec<bool> = stream::iter(pages.iter().enumerate())
+                .map(|(page_idx, (doc, page))| {
+                    let dzi_url = scraper::build_dzi_url(doc, page);
+                    let output_path = destination.join(doc).join(format!("{page}.png"));
+                    async move {
+                        if output_path.exists() {
+                            return true;
+                        }
+                        println!("[{doc_num}/{total_docs}] {doc}/{page} ({}/{})", page_idx + 1, total_pages);
+                        for retry in 1..=5 {
+                            match downloader::download_dzi(&dzi_url, &output_path, max_width).await {
+                                Ok(_) => return true,
+                                Err(e) => {
+                                    let msg = e.to_string();
+                                    if msg.contains("none succeeded") {
+                                        println!("  No zoomable image found for {doc}/{page}, skipping.");
+                                        return true;
+                                    }
+                                    eprintln!("  Retry {retry}/5 failed for {doc}/{page}: {e}");
+                                }
+                            }
+                        }
+                        eprintln!("Failed {doc}/{page} after 5 retries");
+                        false
+                    }
+                })
+                .buffer_unordered(3)
+                .collect()
+                .await;
+
+            let all_pages_ok = results.iter().all(|&ok| ok);
             if all_pages_ok {
                 println!("Completed {doc_name} ({total_pages} pages)");
                 doc_ok = true;
                 break;
+            } else {
+                eprintln!("Some pages failed, retrying whole document (attempt {doc_attempt}/3)");
             }
         }
 
