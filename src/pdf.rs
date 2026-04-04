@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{BufWriter, Cursor};
 use std::path::Path;
 
 use anyhow::Context;
@@ -12,6 +12,7 @@ pub fn generate_pdf(
     pages: &[(String, String)],
     image_dir: &Path,
     output_path: &Path,
+    jpeg_quality: Option<u8>,
 ) -> anyhow::Result<()> {
     // Collect existing image paths
     let image_paths: Vec<_> = pages
@@ -42,6 +43,7 @@ pub fn generate_pdf(
         first_img,
         w,
         h,
+        jpeg_quality,
     );
 
     // Process remaining images
@@ -53,7 +55,7 @@ pub fn generate_pdf(
         let height_mm = Mm(h as f32 / PPI * 25.4);
 
         let (page_idx, layer_idx) = doc.add_page(width_mm, height_mm, "");
-        embed_image(&doc, page_idx, layer_idx, img, w, h);
+        embed_image(&doc, page_idx, layer_idx, img, w, h, jpeg_quality);
     }
 
     let mut file = BufWriter::new(
@@ -73,16 +75,35 @@ fn embed_image(
     img: ::image::DynamicImage,
     width_px: u32,
     height_px: u32,
+    jpeg_quality: Option<u8>,
 ) {
     let rgb = img.into_rgb8();
+
+    let (image_data, image_filter) = match jpeg_quality {
+        Some(q) => {
+            let mut buf = Cursor::new(Vec::new());
+            let encoder = ::image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, q);
+            ::image::ImageEncoder::write_image(
+                encoder,
+                rgb.as_raw(),
+                width_px,
+                height_px,
+                ::image::ExtendedColorType::Rgb8,
+            )
+            .expect("JPEG encoding failed");
+            (buf.into_inner(), Some(ImageFilter::DCT))
+        }
+        None => (rgb.into_raw(), None),
+    };
+
     let pdf_image = Image::from(ImageXObject {
         width: Px(width_px as usize),
         height: Px(height_px as usize),
         color_space: ColorSpace::Rgb,
         bits_per_component: ColorBits::Bit8,
         interpolate: true,
-        image_data: rgb.into_raw(),
-        image_filter: None,
+        image_data,
+        image_filter,
         smask: None,
         clipping_bbox: None,
     });

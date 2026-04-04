@@ -32,7 +32,8 @@ cargo run --release
 ```
 
 This downloads all CC-licensed Wren Library facsimiles as PNG images into
-`facsimiles-2000px/`, one subdirectory per document.
+`facsimiles-2000px/`, one subdirectory per document. WebP copies are
+automatically created in `facsimiles-2000px-webp/`.
 
 ### Options
 
@@ -44,7 +45,7 @@ This downloads all CC-licensed Wren Library facsimiles as PNG images into
 | `--only <LIST>` | Only download these documents (comma-separated, e.g. `Ms-107,Ms-108`) | all |
 | `--skip <LIST>` | Skip these documents (comma-separated, e.g. `Ms-107,Ms-108`) | none |
 | `--parallel <N>` | Number of images to download in parallel | `1` |
-| `--pdf` | Generate a PDF for each document after downloading all its pages | off |
+| `--pdf[=QUALITY]` | Generate a PDF for each document. `--pdf` uses JPEG q90, `--pdf=75` uses q75, `--pdf=uncompressed` embeds raw RGB | off |
 
 `--only` and `--skip` cannot be used together.
 
@@ -62,8 +63,20 @@ Download only Ms-101 and Ms-102 with 5 parallel downloads:
 cargo run --release -- --only Ms-101,Ms-102 --parallel 5
 ```
 
-Download at higher resolution and generate PDFs:
+Download at higher resolution and generate JPEG-compressed PDFs (q90):
 
 ```
 cargo run --release -- --max-width 5000 --pdf
+```
+
+Generate PDFs with custom JPEG quality:
+
+```
+cargo run --release -- --pdf=75 --only Ms-101
+```
+
+Generate uncompressed PDFs (large files):
+
+```
+cargo run --release -- --pdf=uncompressed --only Ms-101
 ```

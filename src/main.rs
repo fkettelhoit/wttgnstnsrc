@@ -1,3 +1,4 @@
+mod compact;
 mod downloader;
 mod pdf;
 mod scraper;
@@ -34,9 +35,10 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     parallel: usize,
 
-    /// Generate a PDF for each document after downloading all its pages
-    #[arg(long)]
-    pdf: bool,
+    /// Generate a PDF for each document. Use --pdf for JPEG q90 (default),
+    /// --pdf=75 for custom quality, or --pdf=uncompressed for raw RGB.
+    #[arg(long, default_missing_value = "90", num_args = 0..=1)]
+    pdf: Option<String>,
 }
 
 #[tokio::main]
@@ -118,13 +120,29 @@ async fn main() -> anyhow::Result<()> {
             if all_pages_ok {
                 println!("Completed {doc_name} ({total_pages} pages)");
 
-                if args.pdf {
+                // WebP conversion (always runs)
+                let webp_dir = PathBuf::from(format!("{}-webp", destination.display()));
+                let webp_doc_dir = webp_dir.join(doc_name);
+                println!("Converting to WebP: {doc_name}...");
+                match compact::convert_to_webp(&pages, &destination.join(doc_name), &webp_doc_dir, 80.0) {
+                    Ok(_) => println!("WebP conversion complete for {doc_name}"),
+                    Err(e) => eprintln!("Warning: WebP conversion failed for {doc_name}: {e}"),
+                }
+
+                // PDF generation (if --pdf is set)
+                if let Some(ref quality_str) = args.pdf {
+                    let jpeg_quality = if quality_str == "uncompressed" {
+                        None
+                    } else {
+                        Some(quality_str.parse::<u8>().unwrap_or(90))
+                    };
+
                     let pdf_path = destination.join(format!("{doc_name}.pdf"));
                     if pdf_path.exists() {
                         println!("PDF already exists: {}", pdf_path.display());
                     } else {
                         println!("Generating PDF for {doc_name}...");
-                        match pdf::generate_pdf(doc_name, &pages, &destination.join(doc_name), &pdf_path) {
+                        match pdf::generate_pdf(doc_name, &pages, &destination.join(doc_name), &pdf_path, jpeg_quality) {
                             Ok(_) => println!("Created {}", pdf_path.display()),
                             Err(e) => eprintln!("Warning: PDF generation failed for {doc_name}: {e}"),
                         }
