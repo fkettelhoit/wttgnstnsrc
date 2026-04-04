@@ -3,7 +3,9 @@ mod downloader;
 mod pdf;
 mod scraper;
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use clap::Parser;
 use futures::stream::{self, StreamExt};
@@ -39,6 +41,35 @@ struct Args {
     /// --pdf=75 for custom quality, or --pdf=uncompressed for raw RGB.
     #[arg(long, default_missing_value = "90", num_args = 0..=1)]
     pdf: Option<String>,
+
+    /// Disable parallel WebP conversion
+    #[arg(long)]
+    webp_slow: bool,
+}
+
+/// Look at existing PNGs in doc_dir and return the most common width.
+/// Falls back to max_width if no PNGs exist yet.
+fn detect_target_width(doc_dir: &Path, max_width: u32) -> u32 {
+    let entries = match std::fs::read_dir(doc_dir) {
+        Ok(e) => e,
+        Err(_) => return max_width,
+    };
+
+    let mut width_counts: HashMap<u32, usize> = HashMap::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("png") {
+            if let Ok((w, _)) = image::image_dimensions(&path) {
+                *width_counts.entry(w).or_insert(0) += 1;
+            }
+        }
+    }
+
+    width_counts
+        .into_iter()
+        .max_by_key(|&(_, count)| count)
+        .map(|(w, _)| w)
+        .unwrap_or(max_width)
 }
 
 #[tokio::main]
@@ -52,6 +83,8 @@ async fn main() -> anyhow::Result<()> {
     let doc_links = scraper::fetch_document_links(!args.all).await?;
     let total_docs = doc_links.len();
     println!("Found {total_docs} documents.");
+
+    let total_failed = AtomicU32::new(0);
 
     for (doc_idx, doc_url) in doc_links.iter().enumerate() {
         let doc_num = doc_idx + 1;
@@ -85,30 +118,29 @@ async fn main() -> anyhow::Result<()> {
             }
 
             let total_pages = pages.len();
+            let doc_dir = destination.join(doc_name);
+            let target_width = detect_target_width(&doc_dir, max_width);
 
             let results: Vec<bool> = stream::iter(pages.iter().enumerate())
                 .map(|(page_idx, (doc, page))| {
                     let dzi_url = scraper::build_dzi_url(doc, page);
                     let output_path = destination.join(doc).join(format!("{page}.png"));
+                    let total_failed = &total_failed;
                     async move {
                         if output_path.exists() {
                             return true;
                         }
                         println!("[{doc_num}/{total_docs}] {doc}/{page} ({}/{})", page_idx + 1, total_pages);
                         for retry in 1..=5 {
-                            match downloader::download_dzi(&dzi_url, &output_path, max_width).await {
+                            match downloader::download_dzi_with_fallback(&dzi_url, &output_path, max_width, target_width).await {
                                 Ok(_) => return true,
                                 Err(e) => {
-                                    let msg = e.to_string();
-                                    if msg.contains("none succeeded") {
-                                        println!("  No zoomable image found for {doc}/{page}, skipping.");
-                                        return true;
-                                    }
                                     eprintln!("  Retry {retry}/5 failed for {doc}/{page}: {e}");
                                 }
                             }
                         }
                         eprintln!("Failed {doc}/{page} after 5 retries");
+                        total_failed.fetch_add(1, Ordering::Relaxed);
                         false
                     }
                 })
@@ -124,8 +156,8 @@ async fn main() -> anyhow::Result<()> {
                 let webp_dir = PathBuf::from(format!("{}-webp", destination.display()));
                 let webp_doc_dir = webp_dir.join(doc_name);
                 println!("Converting to WebP: {doc_name}...");
-                match compact::convert_to_webp(&pages, &destination.join(doc_name), &webp_doc_dir, 80.0) {
-                    Ok(_) => println!("WebP conversion complete for {doc_name}"),
+                match compact::convert_to_webp(&pages, &destination.join(doc_name), &webp_doc_dir, 80.0, args.webp_slow) {
+                    Ok(_) => {},
                     Err(e) => eprintln!("Warning: WebP conversion failed for {doc_name}: {e}"),
                 }
 
@@ -161,6 +193,11 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    println!("Done.");
+    let failed = total_failed.load(Ordering::Relaxed);
+    if failed == 0 {
+        println!("Done. All pages downloaded successfully.");
+    } else {
+        println!("Done. {failed} pages failed to download.");
+    }
     Ok(())
 }

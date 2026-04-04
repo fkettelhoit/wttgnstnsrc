@@ -4584,6 +4584,7 @@ dependencies = [
  "futures",
  "image 0.25.10",
  "printpdf",
+ "rayon",
  "reqwest 0.12.28",
  "scraper",
  "structopt",
