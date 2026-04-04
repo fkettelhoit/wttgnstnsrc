@@ -170,7 +170,9 @@ async fn main() -> anyhow::Result<()> {
                         Some(quality_str.parse::<u8>().unwrap_or(90))
                     };
 
-                    let pdf_path = destination.join(format!("{doc_name}.pdf"));
+                    let pdf_dir = PathBuf::from(format!("{}-pdfs", destination.display()));
+                    std::fs::create_dir_all(&pdf_dir)?;
+                    let pdf_path = pdf_dir.join(format!("{doc_name}.pdf"));
                     if pdf_path.exists() {
                         println!("PDF already exists: {}", pdf_path.display());
                     } else {
