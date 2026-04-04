@@ -12,3 +12,5 @@ clap = { version = "4", features = ["derive"] }
 structopt = "0.3"
 anyhow = "1"
 futures = "0.3"
+printpdf = "0.7"
+image = "0.25"

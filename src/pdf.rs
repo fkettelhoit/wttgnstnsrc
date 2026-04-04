@@ -1,0 +1,95 @@
+use std::fs::File;
+use std::io::BufWriter;
+use std::path::Path;
+
+use anyhow::Context;
+use printpdf::*;
+
+const PPI: f32 = 150.0;
+
+pub fn generate_pdf(
+    doc_name: &str,
+    pages: &[(String, String)],
+    image_dir: &Path,
+    output_path: &Path,
+) -> anyhow::Result<()> {
+    // Collect existing image paths
+    let image_paths: Vec<_> = pages
+        .iter()
+        .filter_map(|(_, page_name)| {
+            let p = image_dir.join(format!("{page_name}.png"));
+            p.exists().then_some(p)
+        })
+        .collect();
+
+    anyhow::ensure!(!image_paths.is_empty(), "No images found for {doc_name}");
+
+    // Read first image to get dimensions for initial page
+    let first_img = ::image::open(&image_paths[0])
+        .with_context(|| format!("Failed to open {}", image_paths[0].display()))?;
+    let (w, h) = ::image::GenericImageView::dimensions(&first_img);
+    let width_mm = Mm(w as f32 / PPI * 25.4);
+    let height_mm = Mm(h as f32 / PPI * 25.4);
+
+    let (doc, first_page_idx, first_layer_idx) =
+        PdfDocument::new(doc_name, width_mm, height_mm, "");
+
+    // Embed first image
+    embed_image(
+        &doc,
+        first_page_idx,
+        first_layer_idx,
+        first_img,
+        w,
+        h,
+    );
+
+    // Process remaining images
+    for img_path in &image_paths[1..] {
+        let img = ::image::open(img_path)
+            .with_context(|| format!("Failed to open {}", img_path.display()))?;
+        let (w, h) = ::image::GenericImageView::dimensions(&img);
+        let width_mm = Mm(w as f32 / PPI * 25.4);
+        let height_mm = Mm(h as f32 / PPI * 25.4);
+
+        let (page_idx, layer_idx) = doc.add_page(width_mm, height_mm, "");
+        embed_image(&doc, page_idx, layer_idx, img, w, h);
+    }
+
+    let mut file = BufWriter::new(
+        File::create(output_path)
+            .with_context(|| format!("Failed to create {}", output_path.display()))?,
+    );
+    doc.save(&mut file)
+        .with_context(|| format!("Failed to save {}", output_path.display()))?;
+
+    Ok(())
+}
+
+fn embed_image(
+    doc: &PdfDocumentReference,
+    page_idx: PdfPageIndex,
+    layer_idx: PdfLayerIndex,
+    img: ::image::DynamicImage,
+    width_px: u32,
+    height_px: u32,
+) {
+    let rgb = img.into_rgb8();
+    let pdf_image = Image::from(ImageXObject {
+        width: Px(width_px as usize),
+        height: Px(height_px as usize),
+        color_space: ColorSpace::Rgb,
+        bits_per_component: ColorBits::Bit8,
+        interpolate: true,
+        image_data: rgb.into_raw(),
+        image_filter: None,
+        smask: None,
+        clipping_bbox: None,
+    });
+
+    let layer = doc.get_page(page_idx).get_layer(layer_idx);
+    pdf_image.add_to_layer(layer, ImageTransform {
+        dpi: Some(PPI),
+        ..Default::default()
+    });
+}

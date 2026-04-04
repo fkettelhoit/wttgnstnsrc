@@ -1,4 +1,5 @@
 mod downloader;
+mod pdf;
 mod scraper;
 
 use std::path::PathBuf;
@@ -28,6 +29,10 @@ struct Args {
     /// Only download these documents (comma-separated names, e.g. Ms-107,Ms-108)
     #[arg(long, value_delimiter = ',')]
     only: Vec<String>,
+
+    /// Generate a PDF for each document after downloading all its pages
+    #[arg(long)]
+    pdf: bool,
 }
 
 #[tokio::main]
@@ -108,6 +113,20 @@ async fn main() -> anyhow::Result<()> {
             let all_pages_ok = results.iter().all(|&ok| ok);
             if all_pages_ok {
                 println!("Completed {doc_name} ({total_pages} pages)");
+
+                if args.pdf {
+                    let pdf_path = destination.join(format!("{doc_name}.pdf"));
+                    if pdf_path.exists() {
+                        println!("PDF already exists: {}", pdf_path.display());
+                    } else {
+                        println!("Generating PDF for {doc_name}...");
+                        match pdf::generate_pdf(doc_name, &pages, &destination.join(doc_name), &pdf_path) {
+                            Ok(_) => println!("Created {}", pdf_path.display()),
+                            Err(e) => eprintln!("Warning: PDF generation failed for {doc_name}: {e}"),
+                        }
+                    }
+                }
+
                 doc_ok = true;
                 break;
             } else {
