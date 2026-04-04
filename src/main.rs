@@ -23,12 +23,16 @@ struct Args {
     all: bool,
 
     /// Skip these documents (comma-separated names, e.g. Ms-107,Ms-108)
-    #[arg(long, value_delimiter = ',')]
+    #[arg(long, value_delimiter = ',', conflicts_with = "only")]
     skip: Vec<String>,
 
     /// Only download these documents (comma-separated names, e.g. Ms-107,Ms-108)
     #[arg(long, value_delimiter = ',')]
     only: Vec<String>,
+
+    /// Number of images to download in parallel
+    #[arg(long, default_value_t = 1)]
+    parallel: usize,
 
     /// Generate a PDF for each document after downloading all its pages
     #[arg(long)]
@@ -106,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
                         false
                     }
                 })
-                .buffer_unordered(3)
+                .buffer_unordered(args.parallel)
                 .collect()
                 .await;
 

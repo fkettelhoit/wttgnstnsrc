@@ -31,16 +31,39 @@ Install [Rust](https://www.rust-lang.org/tools/install), then:
 cargo run --release
 ```
 
-By default, the tool only downloads facsimiles kept in the Wren Library, as
-only these are released under a CC BY-NC license. To download all facsimiles
-from the collection (regardless of license), pass `--all`:
+This downloads all CC-licensed Wren Library facsimiles as PNG images into
+`facsimiles-2000px/`, one subdirectory per document.
+
+### Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--max-width <PX>` | Maximum image width in pixels | `2000` |
+| `--destination <DIR>` | Output directory | `facsimiles-{max_width}px` |
+| `--all` | Download all facsimiles, not just CC-licensed Wren Library ones | off |
+| `--only <LIST>` | Only download these documents (comma-separated, e.g. `Ms-107,Ms-108`) | all |
+| `--skip <LIST>` | Skip these documents (comma-separated, e.g. `Ms-107,Ms-108`) | none |
+| `--parallel <N>` | Number of images to download in parallel | `1` |
+| `--pdf` | Generate a PDF for each document after downloading all its pages | off |
+
+`--only` and `--skip` cannot be used together.
+
+### Examples
+
+Download everything at default resolution:
 
 ```
-cargo run --release -- --all
+cargo run --release
 ```
 
-You can also customize the image resolution and destination directory:
+Download only Ms-101 and Ms-102 with 5 parallel downloads:
 
 ```
-cargo run --release -- --max-width 5000 --destination path/to/my/directory
+cargo run --release -- --only Ms-101,Ms-102 --parallel 5
+```
+
+Download at higher resolution and generate PDFs:
+
+```
+cargo run --release -- --max-width 5000 --pdf
 ```
