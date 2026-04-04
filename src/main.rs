@@ -131,15 +131,16 @@ async fn main() -> anyhow::Result<()> {
                             return true;
                         }
                         println!("[{doc_num}/{total_docs}] {doc}/{page} ({}/{})", page_idx + 1, total_pages);
-                        for retry in 1..=5 {
+                        for retry in 1..=3 {
                             match downloader::download_dzi_with_fallback(&dzi_url, &output_path, max_width, target_width).await {
                                 Ok(_) => return true,
                                 Err(e) => {
-                                    eprintln!("  Retry {retry}/5 failed for {doc}/{page}: {e}");
+                                    let msg = shorten_error(&e);
+                                    eprintln!("  Retry {retry}/3 failed for {doc}/{page}: {msg}");
                                 }
                             }
                         }
-                        eprintln!("Failed {doc}/{page} after 5 retries");
+                        eprintln!("Failed {doc}/{page} after 3 retries");
                         total_failed.fetch_add(1, Ordering::Relaxed);
                         false
                     }
@@ -200,4 +201,13 @@ async fn main() -> anyhow::Result<()> {
         println!("Done. {failed} pages failed to download.");
     }
     Ok(())
+}
+
+fn shorten_error(e: &anyhow::Error) -> String {
+    let text = e.to_string();
+    if text.contains("none succeeded") || text.contains("Tried all") {
+        return "couldn't find a zoomable image".to_string();
+    }
+    let first_line = text.lines().next().unwrap_or("unknown error");
+    first_line.to_string()
 }

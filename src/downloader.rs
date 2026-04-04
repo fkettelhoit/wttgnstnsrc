@@ -49,11 +49,12 @@ pub async fn download_dzi(dzi_url: &str, output_path: &Path, max_width: u32) -> 
         Err(e) => {
             // Clean up tmp file on failure
             let _ = tokio::fs::remove_file(&tmp_path).await;
-            anyhow::bail!(
-                "Failed to download {} to {}: {e}",
-                dzi_url,
-                output_path.display()
-            );
+            let msg = if e.to_string().contains("none succeeded") {
+                "couldn't find a zoomable image".to_string()
+            } else {
+                e.to_string().lines().next().unwrap_or("unknown error").to_string()
+            };
+            anyhow::bail!("{msg}");
         }
     }
 
@@ -133,10 +134,12 @@ pub async fn download_dzi_with_fallback(
         }
         Err(e) => {
             let _ = tokio::fs::remove_file(&fullres_path).await;
-            anyhow::bail!(
-                "Failed to download {} at full resolution: {e}",
-                dzi_url,
-            );
+            let msg = if e.to_string().contains("none succeeded") {
+                "couldn't find a zoomable image".to_string()
+            } else {
+                e.to_string().lines().next().unwrap_or("unknown error").to_string()
+            };
+            anyhow::bail!("{msg}");
         }
     }
 }
