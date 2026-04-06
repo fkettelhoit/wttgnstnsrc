@@ -14,26 +14,27 @@ pub fn generate_pdf(
     output_path: &Path,
     jpeg_quality: Option<u8>,
 ) -> anyhow::Result<()> {
-    // Collect existing image paths
-    let image_paths: Vec<_> = pages
+    // Collect existing image paths with their page names
+    let image_pages: Vec<_> = pages
         .iter()
         .filter_map(|(_, page_name)| {
             let p = image_dir.join(format!("{page_name}.png"));
-            p.exists().then_some(p)
+            p.exists().then_some((p, page_name.as_str()))
         })
         .collect();
 
-    anyhow::ensure!(!image_paths.is_empty(), "No images found for {doc_name}");
+    anyhow::ensure!(!image_pages.is_empty(), "No images found for {doc_name}");
 
     // Read first image to get dimensions for initial page
-    let first_img = ::image::open(&image_paths[0])
-        .with_context(|| format!("Failed to open {}", image_paths[0].display()))?;
+    let first_img = ::image::open(&image_pages[0].0)
+        .with_context(|| format!("Failed to open {}", image_pages[0].0.display()))?;
     let (w, h) = ::image::GenericImageView::dimensions(&first_img);
     let width_mm = Mm(w as f32 / PPI * 25.4);
     let height_mm = Mm(h as f32 / PPI * 25.4);
 
     let (doc, first_page_idx, first_layer_idx) =
         PdfDocument::new(doc_name, width_mm, height_mm, "");
+    let font = doc.add_builtin_font(BuiltinFont::Helvetica)?;
 
     // Embed first image
     embed_image(
@@ -45,9 +46,11 @@ pub fn generate_pdf(
         h,
         jpeg_quality,
     );
+    add_page_label(&doc, first_page_idx, first_layer_idx, doc_name, image_pages[0].1, width_mm, w, &font);
+    doc.add_bookmark(image_pages[0].1, first_page_idx);
 
     // Process remaining images
-    for img_path in &image_paths[1..] {
+    for &(ref img_path, page_name) in &image_pages[1..] {
         let img = ::image::open(img_path)
             .with_context(|| format!("Failed to open {}", img_path.display()))?;
         let (w, h) = ::image::GenericImageView::dimensions(&img);
@@ -56,6 +59,8 @@ pub fn generate_pdf(
 
         let (page_idx, layer_idx) = doc.add_page(width_mm, height_mm, "");
         embed_image(&doc, page_idx, layer_idx, img, w, h, jpeg_quality);
+        add_page_label(&doc, page_idx, layer_idx, doc_name, page_name, width_mm, w, &font);
+        doc.add_bookmark(page_name, page_idx);
     }
 
     let mut file = BufWriter::new(
@@ -66,6 +71,37 @@ pub fn generate_pdf(
         .with_context(|| format!("Failed to save {}", output_path.display()))?;
 
     Ok(())
+}
+
+fn add_page_label(
+    doc: &PdfDocumentReference,
+    page_idx: PdfPageIndex,
+    layer_idx: PdfLayerIndex,
+    doc_name: &str,
+    page_name: &str,
+    page_width: Mm,
+    page_width_px: u32,
+    font: &IndirectFontRef,
+) {
+    let label = format!("{doc_name},{page_name}");
+    let font_size = page_width_px as f32 * 0.0075;
+    // Approximate Helvetica average character width as 0.5 * font_size (in pt), converted to mm
+    let char_width_mm = font_size * 0.5 * 25.4 / 72.0;
+    let text_width = char_width_mm * label.len() as f32;
+    let x = Mm((page_width.0 - text_width) / 2.0);
+    let layer = doc.get_page(page_idx).get_layer(layer_idx);
+
+    let padding = Mm(1.5);
+    let rect_x = x - padding;
+    let rect_y = Mm(2.0);
+    let rect_w = Mm(text_width) + padding + padding;
+    let rect_h = Mm(font_size * 25.4 / 72.0) + padding;
+
+    layer.set_fill_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
+    layer.add_rect(Rect::new(rect_x, rect_y, rect_x + rect_w, rect_y + rect_h));
+
+    layer.set_fill_color(Color::Rgb(Rgb::new(1.0, 1.0, 1.0, None)));
+    layer.use_text(&label, font_size, x, Mm(3.0), font);
 }
 
 fn embed_image(
