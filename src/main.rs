@@ -20,7 +20,7 @@ struct Args {
     #[arg(long, default_value_t = 2000)]
     max_width: u32,
 
-    /// Destination directory for downloaded facsimiles [default: facsimiles-{max_width}px]
+    /// Base output directory [default: facsimiles/{max_width}px]
     #[arg(long)]
     destination: Option<PathBuf>,
 
@@ -61,10 +61,10 @@ fn detect_target_width(doc_dir: &Path, max_width: u32) -> u32 {
     let mut width_counts: HashMap<u32, usize> = HashMap::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("png") {
-            if let Ok((w, _)) = image::image_dimensions(&path) {
-                *width_counts.entry(w).or_insert(0) += 1;
-            }
+        if path.extension().and_then(|e| e.to_str()) == Some("png")
+            && let Ok((w, _)) = image::image_dimensions(&path)
+        {
+            *width_counts.entry(w).or_insert(0) += 1;
         }
     }
 
@@ -79,8 +79,11 @@ fn detect_target_width(doc_dir: &Path, max_width: u32) -> u32 {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let max_width = args.max_width;
-    let destination = args.destination
-        .unwrap_or_else(|| PathBuf::from(format!("facsimiles-{max_width}px")));
+    let base_dir = args.destination
+        .unwrap_or_else(|| PathBuf::from(format!("facsimiles/{max_width}px")));
+    let png_dir = base_dir.join("png");
+    let webp_dir = base_dir.join("webp");
+    let pdf_dir = base_dir.join("pdf");
 
     println!("Fetching document names from wittgensteinsource.org...");
     let doc_links = scraper::fetch_document_links(!args.all).await?;
@@ -122,13 +125,13 @@ async fn main() -> anyhow::Result<()> {
             }
 
             let total_pages = pages.len();
-            let doc_dir = destination.join(doc_name);
+            let doc_dir = png_dir.join(doc_name);
             let target_width = detect_target_width(&doc_dir, max_width);
 
             let results: Vec<PageResult> = stream::iter(pages.iter().enumerate())
                 .map(|(page_idx, (doc, page))| {
                     let dzi_url = scraper::build_dzi_url(doc, page);
-                    let output_path = destination.join(doc).join(format!("{page}.png"));
+                    let output_path = png_dir.join(doc).join(format!("{page}.png"));
                     let total_failed = &total_failed;
                     let total_no_image = &total_no_image;
                     async move {
@@ -159,15 +162,14 @@ async fn main() -> anyhow::Result<()> {
                 .collect()
                 .await;
 
-            let has_real_failures = results.iter().any(|&r| r == PageResult::Failed);
+            let has_real_failures = results.contains(&PageResult::Failed);
             if !has_real_failures {
                 println!("Completed {doc_name} ({total_pages} pages)");
 
                 // WebP conversion (always runs)
-                let webp_dir = PathBuf::from(format!("{}-webp", destination.display()));
                 let webp_doc_dir = webp_dir.join(doc_name);
                 println!("Converting to WebP: {doc_name}...");
-                match compact::convert_to_webp(&pages, &destination.join(doc_name), &webp_doc_dir, 80.0, args.webp_slow) {
+                match compact::convert_to_webp(&pages, &png_dir.join(doc_name), &webp_doc_dir, 80.0, args.webp_slow) {
                     Ok(_) => {},
                     Err(e) => eprintln!("Warning: WebP conversion failed for {doc_name}: {e}"),
                 }
@@ -180,14 +182,13 @@ async fn main() -> anyhow::Result<()> {
                         Some(quality_str.parse::<u8>().unwrap_or(90))
                     };
 
-                    let pdf_dir = PathBuf::from(format!("{}-pdfs", destination.display()));
                     std::fs::create_dir_all(&pdf_dir)?;
                     let pdf_path = pdf_dir.join(format!("{doc_name}.pdf"));
                     if pdf_path.exists() {
                         println!("PDF already exists: {}", pdf_path.display());
                     } else {
                         println!("Generating PDF for {doc_name}...");
-                        match pdf::generate_pdf(doc_name, &pages, &destination.join(doc_name), &pdf_path, jpeg_quality) {
+                        match pdf::generate_pdf(doc_name, &pages, &png_dir.join(doc_name), &pdf_path, jpeg_quality) {
                             Ok(_) => println!("Created {}", pdf_path.display()),
                             Err(e) => eprintln!("Warning: PDF generation failed for {doc_name}: {e}"),
                         }

@@ -1,7 +1,12 @@
 [package]
-name = "wittgenstein-facsimile-downloader"
+name = "wittgensteinsourcerer"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+description = "Download Wittgenstein Nachlass facsimiles from wittgensteinsource.org"
+license = "MIT"
+repository = "https://github.com/fkettelhoit/wittgensteinsourcerer"
+readme = "README.md"
+keywords = ["wittgenstein", "nachlass", "facsimile", "deep-zoom"]
 
 [dependencies]
 dezoomify-rs = "2"

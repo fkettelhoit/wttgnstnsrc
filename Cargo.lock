@@ -4575,7 +4575,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wittgenstein-facsimile-downloader"
+name = "wittgensteinsourcerer"
 version = "0.1.0"
 dependencies = [
  "anyhow",

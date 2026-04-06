@@ -35,10 +35,10 @@ pub async fn fetch_document_links(wren_library_only: bool) -> Result<Vec<String>
             }
         }
         for a in li.select(&a_selector) {
-            if a.text().collect::<String>().trim() == "F" {
-                if let Some(href) = a.value().attr("href") {
-                    links.push(href.to_string());
-                }
+            if a.text().collect::<String>().trim() == "F"
+                && let Some(href) = a.value().attr("href")
+            {
+                links.push(href.to_string());
             }
         }
     }
@@ -57,10 +57,10 @@ pub async fn fetch_pages_for_doc(relative_url: &str) -> Result<Vec<(String, Stri
 
     let mut pages = Vec::new();
     for a in document.select(&a_selector) {
-        if let Some(data_title) = a.value().attr("data-title") {
-            if let Some((doc, page)) = data_title.split_once(',') {
-                pages.push((doc.to_string(), page.to_string()));
-            }
+        if let Some(data_title) = a.value().attr("data-title")
+            && let Some((doc, page)) = data_title.split_once(',')
+        {
+            pages.push((doc.to_string(), page.to_string()));
         }
     }
 

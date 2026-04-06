@@ -73,6 +73,7 @@ pub fn generate_pdf(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_page_label(
     doc: &PdfDocumentReference,
     page_idx: PdfPageIndex,
