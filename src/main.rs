@@ -7,6 +7,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+#[derive(Clone, Copy, PartialEq)]
+enum PageResult { Ok, Failed, NoImage }
+
 use clap::Parser;
 use futures::stream::{self, StreamExt};
 
@@ -85,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
     println!("Found {total_docs} documents.");
 
     let total_failed = AtomicU32::new(0);
+    let total_no_image = AtomicU32::new(0);
 
     for (doc_idx, doc_url) in doc_links.iter().enumerate() {
         let doc_num = doc_idx + 1;
@@ -121,36 +125,42 @@ async fn main() -> anyhow::Result<()> {
             let doc_dir = destination.join(doc_name);
             let target_width = detect_target_width(&doc_dir, max_width);
 
-            let results: Vec<bool> = stream::iter(pages.iter().enumerate())
+            let results: Vec<PageResult> = stream::iter(pages.iter().enumerate())
                 .map(|(page_idx, (doc, page))| {
                     let dzi_url = scraper::build_dzi_url(doc, page);
                     let output_path = destination.join(doc).join(format!("{page}.png"));
                     let total_failed = &total_failed;
+                    let total_no_image = &total_no_image;
                     async move {
                         if output_path.exists() {
-                            return true;
+                            return PageResult::Ok;
                         }
                         println!("[{doc_num}/{total_docs}] {doc}/{page} ({}/{})", page_idx + 1, total_pages);
                         for retry in 1..=3 {
                             match downloader::download_dzi_with_fallback(&dzi_url, &output_path, max_width, target_width).await {
-                                Ok(_) => return true,
+                                Ok(_) => return PageResult::Ok,
                                 Err(e) => {
                                     let msg = shorten_error(&e);
+                                    if msg == "couldn't find a zoomable image" {
+                                        eprintln!("  No zoomable image for {doc}/{page}");
+                                        total_no_image.fetch_add(1, Ordering::Relaxed);
+                                        return PageResult::NoImage;
+                                    }
                                     eprintln!("  Retry {retry}/3 failed for {doc}/{page}: {msg}");
                                 }
                             }
                         }
                         eprintln!("Failed {doc}/{page} after 3 retries");
                         total_failed.fetch_add(1, Ordering::Relaxed);
-                        false
+                        PageResult::Failed
                     }
                 })
                 .buffer_unordered(args.parallel)
                 .collect()
                 .await;
 
-            let all_pages_ok = results.iter().all(|&ok| ok);
-            if all_pages_ok {
+            let has_real_failures = results.iter().any(|&r| r == PageResult::Failed);
+            if !has_real_failures {
                 println!("Completed {doc_name} ({total_pages} pages)");
 
                 // WebP conversion (always runs)
@@ -197,10 +207,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let failed = total_failed.load(Ordering::Relaxed);
-    if failed == 0 {
-        println!("Done. All pages downloaded successfully.");
-    } else {
-        println!("Done. {failed} pages failed to download.");
+    let no_image = total_no_image.load(Ordering::Relaxed);
+    match (failed, no_image) {
+        (0, 0) => println!("Done. All pages downloaded successfully."),
+        (0, n) => println!("Done. {n} pages had no zoomable image."),
+        (f, 0) => println!("Done. {f} pages failed to download."),
+        (f, n) => println!("Done. {f} pages failed to download. {n} pages had no zoomable image."),
     }
     Ok(())
 }

@@ -76,6 +76,7 @@ pub async fn download_dzi_with_fallback(
     // Try at requested max_width first
     match download_dzi(dzi_url, output_path, max_width).await {
         Ok(_) => return Ok(()),
+        Err(e) if e.to_string().contains("couldn't find a zoomable image") => return Err(e),
         Err(_) => {
             // Fall through to full-resolution fallback
         }
