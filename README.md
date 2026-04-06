@@ -88,3 +88,18 @@ Generate uncompressed PDFs (large files):
 ```
 cargo run --release -- --pdf=uncompressed --only Ms-101
 ```
+
+### Copyright
+
+By default, this tool only downloads facsimiles from the Wren Library that are
+released under a CC BY-NC 4.0 license. If you use the `--all` flag, you will
+also download facsimiles that may be under different or more restrictive
+copyright terms. It is your responsibility to verify that you have the legal
+right to download and use those files in your jurisdiction. This tool does not
+grant any rights to the downloaded material.
+
+### Be nice to the server
+
+The `--parallel` flag defaults to 1 for a reason: wittgensteinsource.org is a
+small academic server, not a CDN. Please stick to the default of sequential
+downloads unless you have a good reason not to.
