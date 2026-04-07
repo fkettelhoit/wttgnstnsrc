@@ -1,10 +1,10 @@
 [package]
-name = "wittgensteinsourcerer"
+name = "wttgnstnsrc"
 version = "0.1.0"
 edition = "2024"
 description = "Download Wittgenstein Nachlass facsimiles from wittgensteinsource.org"
 license = "MIT"
-repository = "https://github.com/fkettelhoit/wittgensteinsourcerer"
+repository = "https://github.com/fkettelhoit/wttgnstnsrc"
 readme = "README.md"
 keywords = ["wittgenstein", "nachlass", "facsimile", "deep-zoom"]
 

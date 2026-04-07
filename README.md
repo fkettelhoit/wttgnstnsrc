@@ -35,7 +35,7 @@ You can also install the binary globally:
 
 ```
 cargo install --path .
-wittgensteinsourcerer
+wttgnstnsrc
 ```
 
 ### Options
@@ -43,7 +43,7 @@ wittgensteinsourcerer
 ```
 Download Wittgenstein Nachlass facsimiles from wittgensteinsource.org
 
-Usage: wittgensteinsourcerer [OPTIONS]
+Usage: wttgnstnsrc [OPTIONS]
 
 Options:
       --max-width <MAX_WIDTH>      Maximum image width in pixels [default: 2000]
