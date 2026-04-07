@@ -68,6 +68,7 @@ pub async fn download_dzi_with_fallback(
     output_path: &Path,
     max_width: u32,
     target_width: u32,
+    fallback_width: u32,
 ) -> Result<()> {
     if output_path.exists() {
         return Ok(());
@@ -86,7 +87,6 @@ pub async fn download_dzi_with_fallback(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let fallback_width = max_width * 2;
     println!("  Retrying {page_name} at --max-width={fallback_width} (will scale to {target_width}px)...");
 
     if let Some(parent) = output_path.parent() {

@@ -6,6 +6,7 @@ mod scraper;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
 
 #[derive(Clone, Copy, PartialEq)]
 enum PageResult { Ok, Failed, NoImage }
@@ -90,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
     let total_docs = doc_links.len();
     println!("Found {total_docs} documents.");
 
-    let total_failed = AtomicU32::new(0);
+    let failed_pages: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let total_no_image = AtomicU32::new(0);
 
     for (doc_idx, doc_url) in doc_links.iter().enumerate() {
@@ -132,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
                 .map(|(page_idx, (doc, page))| {
                     let dzi_url = scraper::build_dzi_url(doc, page);
                     let output_path = png_dir.join(doc).join(format!("{page}.png"));
-                    let total_failed = &total_failed;
+                    let failed_pages = &failed_pages;
                     let total_no_image = &total_no_image;
                     async move {
                         if output_path.exists() {
@@ -140,7 +141,8 @@ async fn main() -> anyhow::Result<()> {
                         }
                         println!("[{doc_num}/{total_docs}] {doc}/{page} ({}/{})", page_idx + 1, total_pages);
                         for retry in 1..=3 {
-                            match downloader::download_dzi_with_fallback(&dzi_url, &output_path, max_width, target_width).await {
+                            let fallback_width = max_width * (1 << retry);
+                            match downloader::download_dzi_with_fallback(&dzi_url, &output_path, max_width, target_width, fallback_width).await {
                                 Ok(_) => return PageResult::Ok,
                                 Err(e) => {
                                     let msg = shorten_error(&e);
@@ -154,7 +156,7 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
                         eprintln!("Failed {doc}/{page} after 3 retries");
-                        total_failed.fetch_add(1, Ordering::Relaxed);
+                        failed_pages.lock().unwrap().push(format!("{doc}/{page}"));
                         PageResult::Failed
                     }
                 })
@@ -207,13 +209,20 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let failed = total_failed.load(Ordering::Relaxed);
+    let mut failed_pages = failed_pages.into_inner().unwrap();
+    failed_pages.sort();
+    failed_pages.dedup();
     let no_image = total_no_image.load(Ordering::Relaxed);
-    match (failed, no_image) {
+    match (failed_pages.len(), no_image) {
         (0, 0) => println!("Done. All pages downloaded successfully."),
         (0, n) => println!("Done. {n} pages had no zoomable image."),
         (f, 0) => println!("Done. {f} pages failed to download."),
         (f, n) => println!("Done. {f} pages failed to download. {n} pages had no zoomable image."),
+    }
+    if !failed_pages.is_empty() {
+        for p in &failed_pages {
+            eprintln!("  {p}");
+        }
     }
     Ok(())
 }
